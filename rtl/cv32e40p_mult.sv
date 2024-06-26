@@ -320,6 +320,7 @@ module cv32e40p_mult
   //                                                    //
   ////////////////////////////////////////////////////////
 
+`ifndef RISCV_FORMAL_ALTOPS
   always_comb begin
     result_o = '0;
 
@@ -346,6 +347,44 @@ module cv32e40p_mult
       default: ;  // default case to suppress unique warning
     endcase
   end
+`else 
+  wire [31:0] altop_mask_mul    = 64'h2cdf52a55876063e;
+  wire [31:0] altop_mask_mulh   = 64'h15d01651f6583fb7;
+  wire [31:0] altop_mask_mulhsu = 64'hea3969edecfbe137;
+  wire [31:0] altop_mask_mulhu  = 64'hd13db50d949ce5e8;
+  always_comb begin
+    result_o = '0;
+
+    unique case (operator_i)
+      MUL_MAC32: result_o = ($signed(op_a_i) + $signed(op_b_i)) ^ altop_mask_mul;
+      
+      MUL_MSU32: result_o = int_result[31:0];
+
+      MUL_I, MUL_IR: result_o = short_result[31:0];
+      
+      MUL_H: result_o = (short_signed_i == 2'b11) ? (($signed(op_a_i) + $signed(op_b_i)) ^ altop_mask_mulh  ) : 
+                        (short_signed_i == 2'b01) ? (($signed(op_a_i) - $signed(op_b_i)) ^ altop_mask_mulhsu) : 
+                        (short_signed_i == 2'b00) ? (($signed(op_a_i) + $signed(op_b_i)) ^ altop_mask_mulhu ) : ('0);
+
+      MUL_DOT8: result_o = dot_char_result[31:0];
+      MUL_DOT16: begin
+        if (is_clpx_i) begin
+          if (clpx_img_i) begin
+            result_o[31:16] = clpx_shift_result;
+            result_o[15:0]  = dot_op_c_i[15:0];
+          end else begin
+            result_o[15:0]  = clpx_shift_result;
+            result_o[31:16] = dot_op_c_i[31:16];
+          end
+        end else begin
+          result_o = dot_short_result[31:0];
+        end
+      end
+
+      default: ;  // default case to suppress unique warning
+    endcase
+  end
+`endif
 
   assign ready_o = mulh_ready;
 

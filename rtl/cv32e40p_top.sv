@@ -77,6 +77,11 @@ module cv32e40p_top #(
     // CPU Control Signals
     input  logic fetch_enable_i,
     output logic core_sleep_o
+
+`ifdef RISCV_FORMAL
+    ,
+    `RVFI_OUTPUTS
+`endif
 );
 
   import cv32e40p_apu_core_pkg::*;
@@ -154,6 +159,11 @@ module cv32e40p_top #(
 
       .fetch_enable_i(fetch_enable_i),
       .core_sleep_o  (core_sleep_o)
+
+`ifdef RISCV_FORMAL
+    ,
+    `RVFI_CONN
+`endif
   );
 
   generate

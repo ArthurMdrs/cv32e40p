@@ -925,6 +925,12 @@ module cv32e40p_alu
   //                                                    //
   ////////////////////////////////////////////////////////
 
+`ifdef RISCV_FORMAL_ALTOPS
+  wire [31:0] altop_mask_div  = 64'h29bbf66f7f8529ec;
+  wire [31:0] altop_mask_divu = 64'h8c629acb10e8fd70;
+  wire [31:0] altop_mask_rem  = 64'hf5b7d8538da68fa5;
+  wire [31:0] altop_mask_remu = 64'hbc4402413138d0e1;
+`endif
   always_comb begin
     result_o = '0;
 
@@ -975,7 +981,14 @@ module cv32e40p_alu
       ALU_FF1, ALU_FL1, ALU_CLB, ALU_CNT: result_o = {26'h0, bitop_result[5:0]};
 
       // Division Unit Commands
+`ifndef RISCV_FORMAL_ALTOPS
       ALU_DIV, ALU_DIVU, ALU_REM, ALU_REMU: result_o = result_div;
+`else
+      ALU_DIV : result_o = ($signed(operand_b_i) - $signed(operand_a_i)) ^ altop_mask_div;
+      ALU_DIVU: result_o = ($signed(operand_b_i) - $signed(operand_a_i)) ^ altop_mask_divu;
+      ALU_REM : result_o = ($signed(operand_b_i) - $signed(operand_a_i)) ^ altop_mask_rem;
+      ALU_REMU: result_o = ($signed(operand_b_i) - $signed(operand_a_i)) ^ altop_mask_remu;
+`endif
 
       default: ;  // default case to suppress unique warning
     endcase
