@@ -1,6 +1,8 @@
 [![Build Status](https://travis-ci.com/pulp-platform/riscv.svg?branch=master)](https://travis-ci.com/pulp-platform/riscv)
 
-# OpenHW Group CORE-V CV32E40P RISC-V IP
+# OpenHW Group CORE-V CV32E40P RISC-V IP with RVFI
+
+This is a modified CV32E40P with the RVFI interface implemented. Check out RISC-V Formal on GitHub.
 
 CV32E40P is a small and efficient, 32-bit, in-order RISC-V core with a 4-stage pipeline that implements
 the RV32IM\[F|Zfinx\]C instruction set architecture, and the PULP custom extensions for achieving
