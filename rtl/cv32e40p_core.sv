@@ -1438,15 +1438,41 @@ module cv32e40p_core
     end
     assign rvfi_valid = rvfi_valid_wb && !rvfi_valid_mask;
     
+    reg [63:0] order_incr, order_incr_q, order_plus_incr;
+    reg [63:0] order_shadow;
+    reg        incr_cntup;    
+    reg        valid_missed_branch;    
+    always_comb begin
+        incr_cntup = stall_ex && ex_stage_i.branch_in_ex_i && id_stage_i.id_ready_o;
+        order_incr = order_incr_q + {63'b0, incr_cntup};
+        order_plus_incr = rvfi_order_wb + order_incr;
+    end    
     always @(posedge clk or negedge rst_ni) begin
         if (!rst_ni) begin
             rvfi_order_wb <= '0;
+            order_incr_q  <= '0;
+            valid_missed_branch <= '0;
+            order_shadow  <= '0;
         end
         else begin
-            rvfi_order_wb <= rvfi_order_wb + rvfi_valid;
+            if (incr_cntup)
+                order_incr_q  <= order_incr;
+            else if (rvfi_valid)
+                order_incr_q  <= '0;
+            
+            valid_missed_branch <= incr_cntup;
+            
+            // rvfi_order_wb <= rvfi_order_wb + rvfi_valid;
+            if (rvfi_valid)
+                // rvfi_order_wb <= rvfi_order_wb + 64'b1;
+                rvfi_order_wb <= rvfi_order_wb + order_incr + 64'b1;
         end
     end
     assign rvfi_order = rvfi_order_wb;
+    // assign rvfi_order = (valid_missed_branch) ? (rvfi_order_wb + order_incr_q) : (rvfi_order_wb);
+    
+    cov_incr: cover property (order_incr_q == 64'd2 ##[*] order_incr_q == 64'd0);
+    cov_both_valids: cover property (rvfi_valid && valid_missed_branch);
     
     always @(posedge clk or negedge rst_ni) begin
         if (!rst_ni) begin
@@ -1523,16 +1549,19 @@ module cv32e40p_core
             rvfi_intr_wb <= '0;
         end
         else begin
-            next_is_intr <= if_stage_i.pc_mux_i inside {PC_EXCEPTION};
+            if (if_stage_i.aligner_i.update_state)
+                next_is_intr <= if_stage_i.pc_mux_i inside {PC_EXCEPTION};
             // rvfi_intr_if <= next_is_intr;
             // rvfi_intr_id <= rvfi_intr_if;
             // rvfi_intr_ex <= rvfi_intr_id;
             // rvfi_intr_wb <= rvfi_intr_ex;
             
             
-            if (if_stage_i.if_ready)
+            // if (if_stage_i.if_ready)
             // if (if_stage_i.if_ready && if_stage_i.if_valid && if_stage_i.instr_valid)
                 // rvfi_intr_if <= next_is_intr;
+                
+            // if (if_stage_i.if_ready)
                 rvfi_intr_if <= next_is_intr || id_stage_i.mret_insn_dec;
             if (id_stage_i.id_ready_o)
                 rvfi_intr_id <= rvfi_intr_if;
@@ -1863,9 +1892,6 @@ module cv32e40p_core
     reg        rvfi_is_hwlp_if   , rvfi_is_hwlp_id   , rvfi_is_hwlp_ex   , rvfi_is_hwlp_wb   ;
     reg [31:0] rvfi_hwlp_start_if, rvfi_hwlp_start_id, rvfi_hwlp_start_ex, rvfi_hwlp_start_wb;
 `endif
-    
-    // wire insn_ex_is_branch = rvfi_insn_ex[6:0] == OPCODE_BRANCH 
-    //                       && rvfi_insn_ex[14:12] inside {3'h0, 3'h1, 3'h4, 3'h5, 3'h6, 3'h7};
     
     always @(posedge clk or negedge rst_ni) begin
         if (!rst_ni) begin
@@ -2236,8 +2262,6 @@ module cv32e40p_core
 `ifdef RISCV_FORMAL_CUSTOM_ISA
     //====================   CSR - hwlp_start0   ====================//
 
-    // assign rvfi_csr_hwlp_start0_rmask = '1;
-    // assign rvfi_csr_hwlp_start0_rdata = hwlp_start0_wb;
     assign rvfi_csr_hwlp_start0_rmask = rvfi_csr_mask_wb;
     assign rvfi_csr_hwlp_start0_rdata = rvfi_csr_rdata_wb;
     assign rvfi_csr_hwlp_start0_wmask = rvfi_csr_mask_wb;
