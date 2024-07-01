@@ -1436,7 +1436,8 @@ module cv32e40p_core
                 rvfi_valid_wb <= 1'b0; 
         end
     end
-    assign rvfi_valid = rvfi_valid_wb && !rvfi_valid_mask;
+    // assign rvfi_valid = rvfi_valid_wb && !rvfi_valid_mask;
+    assign rvfi_valid = (rvfi_valid_wb && !rvfi_valid_mask) || valid_missed_branch;
     
     reg [63:0] order_incr, order_incr_q, order_plus_incr;
     reg [63:0] order_shadow;
@@ -1457,19 +1458,22 @@ module cv32e40p_core
         else begin
             if (incr_cntup)
                 order_incr_q  <= order_incr;
-            else if (rvfi_valid)
+            // else if (rvfi_valid)
+            else if (rvfi_valid_wb)
                 order_incr_q  <= '0;
             
             valid_missed_branch <= incr_cntup;
             
             // rvfi_order_wb <= rvfi_order_wb + rvfi_valid;
-            if (rvfi_valid)
+            // if (rvfi_valid)
+            if (rvfi_valid_wb)
                 // rvfi_order_wb <= rvfi_order_wb + 64'b1;
-                rvfi_order_wb <= rvfi_order_wb + order_incr + 64'b1;
+                // rvfi_order_wb <= rvfi_order_wb + order_incr + 64'b1;
+                rvfi_order_wb <= rvfi_order_wb + order_incr_q + 64'b1;
         end
     end
-    assign rvfi_order = rvfi_order_wb;
-    // assign rvfi_order = (valid_missed_branch) ? (rvfi_order_wb + order_incr_q) : (rvfi_order_wb);
+    // assign rvfi_order = rvfi_order_wb;
+    assign rvfi_order = (valid_missed_branch) ? (rvfi_order_wb + order_incr_q) : (rvfi_order_wb);
     
     cov_incr: cover property (order_incr_q == 64'd2 ##[*] order_incr_q == 64'd0);
     cov_both_valids: cover property (rvfi_valid && valid_missed_branch);
@@ -1493,6 +1497,11 @@ module cv32e40p_core
                 // If a mem instr is waiting for rvalid, don't update
                 if (!stall_ex)
                     rvfi_insn_ex <= rvfi_insn_id;
+                    
+            // The 'if' below will capture branches that don't go to WB stage
+            if (incr_cntup)
+                rvfi_insn_wb <= rvfi_insn_id;
+            else
             if (load_store_unit_i.lsu_ready_wb_o)
                 rvfi_insn_wb <= rvfi_insn_ex;
         end
@@ -1511,6 +1520,11 @@ module cv32e40p_core
                 rvfi_trap_id <= id_stage_i.illegal_insn_dec && id_stage_i.is_decoding_o;
             if (ex_stage_i.ex_ready_o)
                 rvfi_trap_ex <= rvfi_trap_id;
+                    
+            // The 'if' below will capture branches that don't go to WB stage
+            if (incr_cntup)
+                rvfi_trap_wb <= rvfi_trap_id;
+            else
             if (load_store_unit_i.lsu_ready_wb_o)
                 rvfi_trap_wb <= rvfi_trap_ex;
         end
@@ -1551,11 +1565,6 @@ module cv32e40p_core
         else begin
             if (if_stage_i.aligner_i.update_state)
                 next_is_intr <= if_stage_i.pc_mux_i inside {PC_EXCEPTION};
-            // rvfi_intr_if <= next_is_intr;
-            // rvfi_intr_id <= rvfi_intr_if;
-            // rvfi_intr_ex <= rvfi_intr_id;
-            // rvfi_intr_wb <= rvfi_intr_ex;
-            
             
             // if (if_stage_i.if_ready)
             // if (if_stage_i.if_ready && if_stage_i.if_valid && if_stage_i.instr_valid)
@@ -1569,6 +1578,11 @@ module cv32e40p_core
                 // If a mem instr is waiting for rvalid, don't update
                 if (!stall_ex)
                     rvfi_intr_ex <= rvfi_intr_id;
+                    
+            // The 'if' below will capture branches that don't go to WB stage
+            if (incr_cntup)
+                rvfi_intr_wb <= rvfi_intr_id;
+            else
             if (load_store_unit_i.lsu_ready_wb_o)
                 rvfi_intr_wb <= rvfi_intr_ex;
         end
@@ -1589,6 +1603,11 @@ module cv32e40p_core
                 rvfi_mode_id <= id_stage_i.current_priv_lvl_i;
             if (ex_stage_i.ex_ready_o)
                 rvfi_mode_ex <= rvfi_mode_id;
+                    
+            // The 'if' below will capture branches that don't go to WB stage
+            if (incr_cntup)
+                rvfi_mode_wb <= rvfi_mode_id;
+            else
             if (load_store_unit_i.lsu_ready_wb_o)
                 rvfi_mode_wb <= rvfi_mode_ex;
         end
@@ -1677,6 +1696,13 @@ module cv32e40p_core
                     rvfi_rs1_rdata_ex <= rvfi_rs1_rdata_id;
                 end
             end
+                    
+            // The 'if' below will capture branches that don't go to WB stage
+            if (incr_cntup) begin
+                rvfi_rs1_addr_wb <= rvfi_rs1_addr_id;
+                rvfi_rs1_rdata_wb <= rvfi_rs1_rdata_id;
+            end
+            else
             if (load_store_unit_i.lsu_ready_wb_o) begin
                 rvfi_rs1_addr_wb <= rvfi_rs1_addr_ex;
                 rvfi_rs1_rdata_wb <= rvfi_rs1_rdata_ex;
@@ -1715,6 +1741,13 @@ module cv32e40p_core
                     rvfi_rs2_rdata_ex <= rvfi_rs2_rdata_id;
                 end
             end
+                    
+            // The 'if' below will capture branches that don't go to WB stage
+            if (incr_cntup) begin
+                rvfi_rs2_addr_wb <= rvfi_rs2_addr_id;
+                rvfi_rs2_rdata_wb <= rvfi_rs2_rdata_id;
+            end
+            else
             if (load_store_unit_i.lsu_ready_wb_o) begin
                 rvfi_rs2_addr_wb <= rvfi_rs2_addr_ex;
                 rvfi_rs2_rdata_wb <= rvfi_rs2_rdata_ex;
@@ -1746,7 +1779,14 @@ module cv32e40p_core
                 else
                     rvfi_rd_addr_ex <= '0;
             end
-            
+                    
+            // The 'if' below will capture branches that don't go to WB stage
+            if (incr_cntup)
+                if (!insn_id_is_post && ex_stage_i.regfile_alu_we_fw_o)
+                    rvfi_rd_addr_wb <= ex_stage_i.regfile_alu_waddr_fw_o;
+                else
+                    rvfi_rd_addr_wb <= '0;
+            else
             if (load_store_unit_i.lsu_ready_wb_o) begin
                 if (insn_ex_is_csr)
                     rvfi_rd_addr_wb <= aux_csr_rd_addr;
@@ -1787,7 +1827,18 @@ module cv32e40p_core
                 else
                     rvfi_rd_wdata_ex <= '0;
             end
-            
+                    
+            // The 'if' below will capture branches that don't go to WB stage
+            if (incr_cntup)
+                if (ex_stage_i.regfile_alu_we_fw_o && !insn_id_is_post) begin
+                    if (ex_stage_i.regfile_alu_waddr_fw_o == '0)
+                        rvfi_rd_wdata_wb <= '0;
+                    else 
+                        rvfi_rd_wdata_wb <= ex_stage_i.regfile_alu_wdata_fw_o;
+                end
+                else
+                    rvfi_rd_wdata_wb <= '0;
+            else
             if (load_store_unit_i.lsu_ready_wb_o) begin
                 if (insn_ex_is_csr)
                     rvfi_rd_wdata_wb <= aux_csr_rd_wdata;
@@ -1910,6 +1961,11 @@ module cv32e40p_core
                 // If a mem instr is waiting for rvalid, don't update
                 if (!stall_ex)
                     rvfi_pc_rdata_ex <= rvfi_pc_rdata_id;
+                    
+            // The 'if' below will capture branches that don't go to WB stage
+            if (incr_cntup)
+                rvfi_pc_rdata_wb <= rvfi_pc_rdata_id;
+            else
             if (load_store_unit_i.lsu_ready_wb_o)
                 rvfi_pc_rdata_wb <= rvfi_pc_rdata_ex;
         end
@@ -1943,6 +1999,13 @@ module cv32e40p_core
                 else
                     rvfi_pc_wdata_ex <= rvfi_pc_wdata_id;
             
+            // The 'if' below will capture branches that don't go to WB stage
+            if (incr_cntup)
+                if (id_stage_i.branch_taken_ex)
+                    rvfi_pc_wdata_wb <= {ex_stage_i.jump_target_o[31:1], 1'b0};
+                else
+                    rvfi_pc_wdata_wb <= rvfi_pc_wdata_id;
+            else
             if (load_store_unit_i.lsu_ready_wb_o)
                 // Change below is necessary to acommodate hwloops
     // `ifdef RISCV_FORMAL_CUSTOM_ISA
@@ -1954,6 +2017,7 @@ module cv32e40p_core
         end
     end
     assign rvfi_pc_wdata = rvfi_pc_wdata_wb;
+    // assign rvfi_pc_wdata = (valid_missed_branch && id_stage_i.branch_taken_ex) ? ({ex_stage_i.jump_target_o[31:1], 1'b0}) : (rvfi_pc_wdata_wb);
     
 `ifdef RISCV_FORMAL_CUSTOM_ISA
     always @(posedge clk or negedge rst_ni) begin
@@ -2019,6 +2083,11 @@ module cv32e40p_core
                 // If a mem instr is waiting for rvalid, don't update
                 if (!stall_ex)
                     rvfi_mem_addr_ex <= (misaligned_access) ? rvfi_mem_addr_ex : load_store_unit_i.data_addr_o;
+                    
+            // The 'if' below will capture branches that don't go to WB stage
+            // if (incr_cntup)
+            //     rvfi_mem_addr_wb <= load_store_unit_i.data_addr_o;
+            // else
             if (load_store_unit_i.lsu_ready_wb_o)
                 rvfi_mem_addr_wb <= rvfi_mem_addr_ex;
         end
@@ -2060,7 +2129,11 @@ module cv32e40p_core
                 end
                 else // Not a write operation
                     rvfi_mem_wmask_ex <= '0;
-            
+                    
+            // The 'if' below will capture branches that don't go to WB stage
+            if (incr_cntup)
+                rvfi_mem_wmask_wb <= '0;
+            else
             if (load_store_unit_i.lsu_ready_wb_o)
                 rvfi_mem_wmask_wb <= rvfi_mem_wmask_ex;
         end
@@ -2072,7 +2145,11 @@ module cv32e40p_core
             rvfi_mem_rdata_wb <= '0;
         end
         else begin
-            rvfi_mem_rdata_wb <= load_store_unit_i.data_rdata_ex_o;
+            // The 'if' below will capture branches that don't go to WB stage
+            if (incr_cntup)
+                rvfi_mem_rdata_wb <= '0;
+            else
+                rvfi_mem_rdata_wb <= load_store_unit_i.data_rdata_ex_o;
         end
     end
     assign rvfi_mem_rdata = rvfi_mem_rdata_wb;
