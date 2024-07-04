@@ -1868,17 +1868,31 @@ module cv32e40p_core
         end
         else begin
             if (id_stage_i.id_ready_o) begin
-                rvfi_rs3_addr_id <= id_stage_i.regfile_addr_rc_id;
-                rvfi_rs3_rdata_id <= id_stage_i.operand_c_fw_id;
+                if (id_stage_i.regc_used_dec) begin
+                    rvfi_rs3_addr_id <= id_stage_i.regfile_addr_rc_id;
+                    rvfi_rs3_rdata_id <= id_stage_i.operand_c_fw_id;
+                end
+                else 
+                begin
+                    rvfi_rs3_addr_id <= '0;
+                    rvfi_rs3_rdata_id <= '0;
+                end
             end
             if (ex_stage_i.ex_ready_o) begin
                 // If a mem instr is waiting for rvalid, don't update
-                // if (!stall_ex)
+                if (!stall_ex)
                 begin
                     rvfi_rs3_addr_ex <= rvfi_rs3_addr_id;
                     rvfi_rs3_rdata_ex <= rvfi_rs3_rdata_id;
                 end
             end
+                    
+            // The 'if' below will capture branches that don't go to WB stage
+            // if (incr_cntup) begin
+            //     rvfi_rs3_addr_wb <= rvfi_rs3_addr_id;
+            //     rvfi_rs3_rdata_wb <= rvfi_rs3_rdata_id;
+            // end
+            // else
             if (load_store_unit_i.lsu_ready_wb_o) begin
                 rvfi_rs3_addr_wb <= rvfi_rs3_addr_ex;
                 rvfi_rs3_rdata_wb <= rvfi_rs3_rdata_ex;
@@ -1896,12 +1910,25 @@ module cv32e40p_core
         else begin
             if (ex_stage_i.ex_ready_o) begin
                 // If a mem instr is waiting for rvalid, don't update
-                // if (!stall_ex)
-                    if (insn_id_is_post && ex_stage_i.regfile_alu_we_fw_o) // Only update if post-incr instr is detected
-                        rvfi_post_rd_addr_ex <= ex_stage_i.regfile_alu_waddr_fw_o;
-                    else if (!insn_id_is_post)
+                if (!stall_ex)
+                    if (insn_id_is_post) begin // Only update if post-incr instr is detected
+                        if (ex_stage_i.regfile_alu_we_fw_o)
+                            rvfi_post_rd_addr_ex <= ex_stage_i.regfile_alu_waddr_fw_o;
+                        else if (!misaligned_access)
+                            rvfi_post_rd_addr_ex <= '0;
+                    end
+                    else
                         rvfi_post_rd_addr_ex <= '0;
             end
+                    
+            // The 'if' below will capture branches that don't go to WB stage
+            if (incr_cntup) begin
+                if (insn_id_is_post && ex_stage_i.regfile_alu_we_fw_o) // Only update if post-incr instr is detected
+                        rvfi_post_rd_addr_wb <= ex_stage_i.regfile_alu_waddr_fw_o;
+                else if (!insn_id_is_post)
+                    rvfi_post_rd_addr_wb <= '0;
+            end
+            else
             if (load_store_unit_i.lsu_ready_wb_o) begin
                 rvfi_post_rd_addr_wb <= rvfi_post_rd_addr_ex;
             end
@@ -1917,15 +1944,31 @@ module cv32e40p_core
         else begin
             if (ex_stage_i.ex_ready_o) begin
                 // If a mem instr is waiting for rvalid, don't update
-                // if (!stall_ex)
-                    if (insn_id_is_post && ex_stage_i.regfile_alu_we_fw_o) // Only update if post-incr instr is detected
-                        if (ex_stage_i.regfile_alu_waddr_fw_o != '0)
-                            rvfi_post_rd_wdata_ex <= ex_stage_i.regfile_alu_wdata_fw_o;
-                        else
+                if (!stall_ex)
+                    if (insn_id_is_post) begin // Only update if post-incr instr is detected
+                        if (ex_stage_i.regfile_alu_we_fw_o)
+                            if (ex_stage_i.regfile_alu_waddr_fw_o != '0)
+                                rvfi_post_rd_wdata_ex <= ex_stage_i.regfile_alu_wdata_fw_o;
+                            else
+                                rvfi_post_rd_wdata_ex <= '0;
+                        else if (!misaligned_access)
                             rvfi_post_rd_wdata_ex <= '0;
-                    else if (!insn_id_is_post)
+                    end
+                    else
                         rvfi_post_rd_wdata_ex <= '0;
             end
+                    
+            // The 'if' below will capture branches that don't go to WB stage
+            if (incr_cntup) begin
+                if (insn_id_is_post && ex_stage_i.regfile_alu_we_fw_o) // Only update if post-incr instr is detected
+                    if (ex_stage_i.regfile_alu_waddr_fw_o != '0)
+                        rvfi_post_rd_wdata_wb <= ex_stage_i.regfile_alu_wdata_fw_o;
+                    else
+                        rvfi_post_rd_wdata_wb <= '0;
+                else if (!insn_id_is_post)
+                    rvfi_post_rd_wdata_wb <= '0;
+            end
+            else
             if (load_store_unit_i.lsu_ready_wb_o) begin
                 rvfi_post_rd_wdata_wb <= rvfi_post_rd_wdata_ex;
             end
@@ -1943,6 +1986,19 @@ module cv32e40p_core
     reg        rvfi_is_hwlp_if   , rvfi_is_hwlp_id   , rvfi_is_hwlp_ex   , rvfi_is_hwlp_wb   ;
     reg [31:0] rvfi_hwlp_start_if, rvfi_hwlp_start_id, rvfi_hwlp_start_ex, rvfi_hwlp_start_wb;
 `endif
+
+    reg [31:0] branch_target_q;
+    reg        branch_taken_q;
+
+    localparam COMP_BEQZ = 5'b01_110, COMP_BNEZ = 5'b01_111;
+    // wire insn_id_is_c_b    = {rvfi_insn_id[1:0], rvfi_insn_id[15:13]} inside {COMP_BEQZ, COMP_BNEZ}; // Compressed Branch
+    // wire insn_id_is_branch = (rvfi_insn_id[6:0] == OPCODE_BRANCH 
+    //                        && rvfi_insn_id[14:12] inside {3'h0, 3'h1, 3'h4, 3'h5, 3'h6, 3'h7})
+    //                        || insn_id_is_c_b;
+    wire insn_ex_is_c_b    = {rvfi_insn_ex[1:0], rvfi_insn_ex[15:13]} inside {COMP_BEQZ, COMP_BNEZ}; // Compressed Branch
+    wire insn_ex_is_branch = (rvfi_insn_ex[6:0] == OPCODE_BRANCH 
+                           && rvfi_insn_ex[14:12] inside {3'h0, 3'h1, 3'h4, 3'h5, 3'h6, 3'h7})
+                           || insn_ex_is_c_b;
     
     always @(posedge clk or negedge rst_ni) begin
         if (!rst_ni) begin
@@ -1977,12 +2033,23 @@ module cv32e40p_core
             rvfi_pc_wdata_id <= '0;
             rvfi_pc_wdata_ex <= '0;
             rvfi_pc_wdata_wb <= '0;
+            branch_taken_q <= 1'b0;
         end
         else begin
-            if (id_stage_i.branch_taken_ex)
-                rvfi_pc_wdata_id <= {ex_stage_i.jump_target_o[31:1], 1'b0};
-            else
+            if (id_stage_i.branch_taken_ex) begin
+                branch_target_q <= {ex_stage_i.jump_target_o[31:1], 1'b0};
+                branch_taken_q <= 1'b1;
+            end
+            else if (valid_missed_branch)
+                branch_taken_q <= 1'b0;
+            
+            // // if (id_stage_i.branch_taken_ex)
+            // if (id_stage_i.branch_taken_ex && insn_id_is_branch)
+            // // if (id_stage_i.branch_taken_ex && insn_id_is_branch && ex_stage_i.ex_ready_o)
+            //     rvfi_pc_wdata_id <= {ex_stage_i.jump_target_o[31:1], 1'b0};
+            // else            
             if (id_stage_i.id_ready_o)
+            // if (if_stage_i.if_ready)
                 // Jumps are taken in ID stage
                 if (id_stage_i.ctrl_transfer_insn_in_id inside {BRANCH_JAL, BRANCH_JALR})
                     rvfi_pc_wdata_id <= {id_stage_i.jump_target_o[31:1], 1'b0};
@@ -1991,13 +2058,21 @@ module cv32e40p_core
                     rvfi_pc_wdata_id <= if_stage_i.pc_if_o;
             
             if (ex_stage_i.ex_ready_o)
+            // if (id_stage_i.id_ready_o)
                 // If a mem instr is waiting for rvalid, don't update
                 if (!stall_ex)
                 // Branches are taken in EX stage
-                if (id_stage_i.branch_taken_ex)
-                    rvfi_pc_wdata_ex <= {ex_stage_i.jump_target_o[31:1], 1'b0};
-                else
+                // if (id_stage_i.branch_taken_ex)
+                //     rvfi_pc_wdata_ex <= {ex_stage_i.jump_target_o[31:1], 1'b0};
+                // else
                     rvfi_pc_wdata_ex <= rvfi_pc_wdata_id;
+                
+                // // Branches are taken in EX stage
+                // if (id_stage_i.branch_taken_ex)
+                //     rvfi_pc_wdata_ex <= {ex_stage_i.jump_target_o[31:1], 1'b0};
+                // // If a mem instr is waiting for rvalid, don't update
+                // else if (!stall_ex)
+                //     rvfi_pc_wdata_ex <= rvfi_pc_wdata_id;
             
             // The 'if' below will capture branches that don't go to WB stage
             if (incr_cntup)
@@ -2007,18 +2082,26 @@ module cv32e40p_core
                     rvfi_pc_wdata_wb <= rvfi_pc_wdata_id;
             else
             if (load_store_unit_i.lsu_ready_wb_o)
+            // if (ex_stage_i.ex_ready_o)
+                if (insn_ex_is_branch && branch_taken_q) begin
+                    rvfi_pc_wdata_wb <= branch_target_q;
+                    branch_taken_q <= 1'b0;
+                end
+                else
+                    rvfi_pc_wdata_wb <= rvfi_pc_wdata_ex;
+                    
+        end
+    end
+    assign rvfi_pc_wdata = rvfi_pc_wdata_wb;
+    // assign rvfi_pc_wdata = (valid_missed_branch && id_stage_i.branch_taken_ex) ? ({ex_stage_i.jump_target_o[31:1], 1'b0}) : (rvfi_pc_wdata_wb);
+  
                 // Change below is necessary to acommodate hwloops
     // `ifdef RISCV_FORMAL_CUSTOM_ISA
     //             if (rvfi_is_hwlp_ex)
     //                 rvfi_pc_wdata_wb <= rvfi_hwlp_start_ex;
     //             else
     // `endif
-                    rvfi_pc_wdata_wb <= rvfi_pc_wdata_ex;
-        end
-    end
-    assign rvfi_pc_wdata = rvfi_pc_wdata_wb;
-    // assign rvfi_pc_wdata = (valid_missed_branch && id_stage_i.branch_taken_ex) ? ({ex_stage_i.jump_target_o[31:1], 1'b0}) : (rvfi_pc_wdata_wb);
-    
+      
 `ifdef RISCV_FORMAL_CUSTOM_ISA
     always @(posedge clk or negedge rst_ni) begin
         if (!rst_ni) begin
@@ -2034,34 +2117,35 @@ module cv32e40p_core
         else begin
             `define PREFETCH if_stage_i.prefetch_buffer_i
             
-            if (if_stage_i.hwlp_jump) begin
-                rvfi_hwlp_start_if <= if_stage_i.hwlp_target;
-            end
-            rvfi_hwlp_start_id <= rvfi_hwlp_start_if;
-            rvfi_hwlp_start_ex <= rvfi_hwlp_start_id;
-            rvfi_hwlp_start_wb <= rvfi_hwlp_start_ex;
-            
-            if (if_stage_i.hwlp_jump) begin
-                rvfi_is_hwlp_if <= 1'b1;
-            end
-            else if (if_stage_i.if_ready) begin
-                rvfi_is_hwlp_if <= 1'b0;
+            // if (if_stage_i.if_ready) begin
+            if (if_stage_i.aligner_i.update_state) begin
+                rvfi_hwlp_start_if <= hwlp_target;
+                if (if_stage_i.aligner_i.state == 3'b0 && (if_stage_i.aligner_i.hwlp_update_pc_i || if_stage_i.aligner_i.hwlp_update_pc_q)) begin
+                    rvfi_is_hwlp_if <= 1'b1;
+                    rvfi_hwlp_start_if <= (if_stage_i.aligner_i.hwlp_update_pc_i) ? (hwlp_target) : (if_stage_i.aligner_i.hwlp_addr_q);
+                end
+                else if (if_stage_i.branch_req && core_i.if_stage_i.pc_mux_i == PC_HWLOOP)
+                    rvfi_is_hwlp_if <= 1'b1;
+                else
+                    rvfi_is_hwlp_if <= 1'b0;
             end
             if (id_stage_i.id_ready_o) begin
                 rvfi_is_hwlp_id <= rvfi_is_hwlp_if;
+                rvfi_hwlp_start_id <= rvfi_hwlp_start_if;
             end
             if (ex_stage_i.ex_ready_o) begin
                 // If a mem instr is waiting for rvalid, don't update
                 // if (!stall_ex)
                     rvfi_is_hwlp_ex <= rvfi_is_hwlp_id;
+                    rvfi_hwlp_start_ex <= rvfi_hwlp_start_id;
             end
             if (load_store_unit_i.lsu_ready_wb_o) begin
                 rvfi_is_hwlp_wb <= rvfi_is_hwlp_ex;
+                rvfi_hwlp_start_wb <= rvfi_hwlp_start_ex;
             end
         end
     end
     assign rvfi_is_hwlp = rvfi_is_hwlp_wb;
-    // assign rvfi_is_hwlp = 1'b0; // TODO!!! Fix hardware loops!!
     assign rvfi_hwlp_start = rvfi_hwlp_start_wb;
 `endif
 
