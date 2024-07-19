@@ -356,28 +356,29 @@ module cv32e40p_mult
     result_o = '0;
 
     unique case (operator_i)
-      MUL_MAC32: result_o = ($signed(op_a_i) + $signed(op_b_i)) ^ altop_mask_mul;
+      MUL_MAC32: result_o = ((op_a_i + op_b_i) | op_c_i) ^ altop_mask_mul;
       
-      MUL_MSU32: result_o = int_result[31:0];
+      MUL_MSU32: result_o = ((op_a_i - op_b_i) | op_c_i) ^ altop_mask_mul;
 
-      MUL_I, MUL_IR: result_o = short_result[31:0];
+      MUL_I : result_o = (short_signed_i == 2'b00) ? (((({16'b0, short_op_a[15:0]} + {16'b0, short_op_b[15:0]}) & op_c_i) >> imm_i) ^ altop_mask_mul  ) : 
+                         (short_signed_i == 2'b11) ? (((({{16{short_op_a[15]}}, short_op_a[15:0]} + {{16{short_op_b[15]}}, short_op_b[15:0]}) & op_c_i) >> imm_i) ^ altop_mask_mulh ) : ('0);
+      MUL_IR: result_o = (short_signed_i == 2'b00) ? (((({16'b0, short_op_a[15:0]} + {16'b0, short_op_b[15:0]}) & op_c_i) >> imm_i) ^ altop_mask_mulhsu) : 
+                         (short_signed_i == 2'b11) ? (((({{16{short_op_a[15]}}, short_op_a[15:0]} + {{16{short_op_b[15]}}, short_op_b[15:0]}) & op_c_i) >> imm_i) ^ altop_mask_mulhu) : ('0);
       
       MUL_H: result_o = (short_signed_i == 2'b11) ? (($signed(op_a_i) + $signed(op_b_i)) ^ altop_mask_mulh  ) : 
                         (short_signed_i == 2'b01) ? (($signed(op_a_i) - $signed(op_b_i)) ^ altop_mask_mulhsu) : 
                         (short_signed_i == 2'b00) ? (($signed(op_a_i) + $signed(op_b_i)) ^ altop_mask_mulhu ) : ('0);
 
-      MUL_DOT8: result_o = dot_char_result[31:0];
+      MUL_DOT8: result_o = ((dot_op_a_i + dot_op_b_i) ^ dot_op_c_i) ^ altop_mask_mulh;
       MUL_DOT16: begin
         if (is_clpx_i) begin
           if (clpx_img_i) begin
-            result_o[31:16] = clpx_shift_result;
-            result_o[15:0]  = dot_op_c_i[15:0];
+            result_o = ((dot_op_a_i - dot_op_b_i) | dot_op_c_i) ^ altop_mask_mulhsu;
           end else begin
-            result_o[15:0]  = clpx_shift_result;
-            result_o[31:16] = dot_op_c_i[31:16];
+            result_o = ((dot_op_a_i + dot_op_b_i) | dot_op_c_i) ^ altop_mask_mulhu;
           end
         end else begin
-          result_o = dot_short_result[31:0];
+          result_o = ((dot_op_a_i + dot_op_b_i) ^ dot_op_c_i) ^ altop_mask_mulh;
         end
       end
 
