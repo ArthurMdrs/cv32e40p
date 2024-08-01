@@ -1794,11 +1794,11 @@ module cv32e40p_core
             end
                     
             // The 'if' below will capture branches that don't go to WB stage
-            // if (incr_cntup) begin
-            //     rvfi_rs3_addr_wb <= rvfi_rs3_addr_id;
-            //     rvfi_rs3_rdata_wb <= rvfi_rs3_rdata_id;
-            // end
-            // else
+            if (incr_cntup) begin
+                rvfi_rs3_addr_wb <= rvfi_rs3_addr_id;
+                rvfi_rs3_rdata_wb <= rvfi_rs3_rdata_id;
+            end
+            else
             if (load_store_unit_i.lsu_ready_wb_o) begin
                 rvfi_rs3_addr_wb <= rvfi_rs3_addr_ex;
                 rvfi_rs3_rdata_wb <= rvfi_rs3_rdata_ex;
